@@ -81,6 +81,24 @@ class MoldRiskCalculator:
         self.humidity_limit_level_2: int | None = None
         self.humidity_limit_level_3: int | None = None
     
+    def as_dict(self) -> dict[str, Any]:
+        """Create a dict representation of the state."""
+        return {
+            "hum_entity_id": self._hum_entity_id,
+            "temp_entity_id": self._temp_entity_id,
+            "last_receiver_event": self._last_receiver_event,
+            "humidity": self.humidity,
+            "temperature": self.temperature,
+            "risk": self.risk,
+            "humidity_limit_level_1": self.humidity_limit_level_1,
+            "humidity_limit_level_2": self.humidity_limit_level_2,
+            "humidity_limit_level_3" :self.humidity_limit_level_3,
+        }
+
+    def __repr__(self) -> str:
+        """Return the representation."""
+        return f"<MoldRiskCalculator {self.as_dict}>"
+
     def calc_limit_1(self, temp: float | int) -> int:
         """ Calculate limit for risk level 1 """
         if 0 <= temp <= 50:
@@ -223,6 +241,7 @@ class MoldRiskLimitSensor(MoldRiskBaseSensor):
     _limit_level_1: int | None = None
     _limit_level_2: int | None = None
     _limit_level_3: int | None = None
+    _temperature: float | None = None
 
     async def async_added_to_hass(self) -> None:
         """ Handle added to Hass. """
@@ -240,20 +259,27 @@ class MoldRiskLimitSensor(MoldRiskBaseSensor):
     @callback
     def _async_state_listener(self, event: Event) -> None:
         """ Listen for sensor state changes. """
+        _LOGGER.debug("event received, event: %s", event)
         updated = False
+        _LOGGER.debug("before update: %s", self._mold_calc)
         self._mold_calc.async_event_receiver(event)
         
         if self._mold_calc.humidity_limit_level_1 != self._limit_level_1:
+            _LOGGER.debug("state for limit_level_1 changed, %s, %s", self._limit_level_1, self._mold_calc)
             self._limit_level_1 = self._mold_calc.humidity_limit_level_1
             updated = True
         if self._mold_calc.humidity_limit_level_2 != self._limit_level_2:
+            _LOGGER.debug("state for limit_level_2 changed, %s, %s", self._limit_level_2, self._mold_calc)
             self._limit_level_2 = self._mold_calc.humidity_limit_level_2
             updated = True
         if self._mold_calc.humidity_limit_level_3 != self._limit_level_3:
+            _LOGGER.debug("state for limit_level_3 changed, %s, %s", self._limit_level_3, self._mold_calc)
             self._limit_level_3 = self._mold_calc.humidity_limit_level_3
             updated = True
         
         if updated:
+            _LOGGER.debug("will update state, event: %s, %s", event)
+            self._temperature = self._mold_calc.temperature
             self.async_write_ha_state()
 
     @property
@@ -263,6 +289,7 @@ class MoldRiskLimitSensor(MoldRiskBaseSensor):
             "Level 1 limit": self._limit_level_1,
             "Level 2 limit": self._limit_level_2,
             "Level 3 limit": self._limit_level_3,
+            "Temperature": self._temperature,
         }
     
     @property
@@ -282,6 +309,8 @@ class MoldRiskIndexSensor(MoldRiskBaseSensor):
     _attr_name = "Risk Index"
     
     _risk: int | None = None
+    _temperature: float | None = None
+    _humidity: float | None = None
 
     async def async_added_to_hass(self) -> None:
         """ Handle added to Hass. """
@@ -305,8 +334,18 @@ class MoldRiskIndexSensor(MoldRiskBaseSensor):
         self._mold_calc.async_event_receiver(event)
         if self._mold_calc.risk != self._risk:
             self._risk = self._mold_calc.risk
+            self._temperature = self._mold_calc.temperature
+            self._humidity = self._mold_calc.humidity
             self.async_write_ha_state()
     
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """ Return the state attributes of the sensor. """
+        return {
+            "Temperature": self._temperature,
+            "Humidity": self._humidity,
+        }
+
     @property
     def native_value(self) -> int | None:
         """ Return the state of the sensor. """
